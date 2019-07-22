@@ -7,17 +7,19 @@ import android.os.Bundle;
 import android.view.Window;
 import android.widget.Toast;
 
-public class MainActivity extends Activity {
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+
+public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
         new Thread(){
             @Override
             public void run() {
                 super.run();
-                requestPermissions(new String[]{
+                ActivityCompat.requestPermissions(MainActivity.this, new String[]{
                         Manifest.permission.CAMERA
                 }, 1);
             }
