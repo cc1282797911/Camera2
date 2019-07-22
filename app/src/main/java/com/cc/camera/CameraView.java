@@ -7,19 +7,26 @@ import android.graphics.Canvas;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
+import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.MeteringRectangle;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.Size;
+import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.ViewGroup;
@@ -62,8 +69,13 @@ public class CameraView extends TextureView {
 
     private Surface surface;
 
+    private CaptureRequest.Builder mPreviewRequestBuilder;
+
+    private CoordinateTransformer coordinateTransformer;
+
     public CameraView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        setClickable(true);
     }
 
     @Override
@@ -116,12 +128,12 @@ public class CameraView extends TextureView {
                             cameraDevice = camera;
                             try {
                                 surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-                                final CaptureRequest.Builder mPreviewRequestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                                mPreviewRequestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                                 mPreviewRequestBuilder.addTarget(surface);
-                                mPreviewRequestBuilder.addTarget(imageReader.getSurface());
+                                //mPreviewRequestBuilder.addTarget(imageReader.getSurface());
                                 List<Surface> surfaceList = new ArrayList<>(2);
                                 surfaceList.add(surface);
-                                surfaceList.add(imageReader.getSurface());
+                                //surfaceList.add(imageReader.getSurface());
                                 camera.createCaptureSession(surfaceList, new CameraCaptureSession.StateCallback() {
                                     @Override
                                     public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
@@ -248,6 +260,96 @@ public class CameraView extends TextureView {
         });
     }
 
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if(event.getAction() == MotionEvent.ACTION_UP){
+            //手动对焦
+            //focus(event.getX(), event.getY());
+            return true;
+        }
+        return super.onTouchEvent(event);
+    }
+
+    private Rect previewRect;
+    private Rect focusRect;
+
+    private void focus(float cx, float cy){
+        previewRect = new Rect(0, 0, previewSize.getWidth(), previewSize.getHeight());
+        focusRect = new Rect(0, 0, 0, 0);
+        MeteringRectangle focusRect = getFocusArea(cx, cy, true);
+        MeteringRectangle meterRect = getFocusArea(cx, cx, false);
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO);
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_REGIONS, new MeteringRectangle[]{focusRect});
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_REGIONS, new MeteringRectangle[]{meterRect});
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+        try {
+            cameraCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), new CameraCaptureSession.CaptureCallback() {
+                @Override
+                public void onCaptureStarted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, long timestamp, long frameNumber) {
+                    super.onCaptureStarted(session, request, timestamp, frameNumber);
+                }
+
+                @Override
+                public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
+                    super.onCaptureCompleted(session, request, result);
+                }
+
+                @Override
+                public void onCaptureFailed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
+                    super.onCaptureFailed(session, request, failure);
+                }
+            }, workHandler);
+        } catch (Throwable throwable){
+            throwable.printStackTrace();
+        }
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+        try {
+            try {
+                cameraCaptureSession.capture(mPreviewRequestBuilder.build(), null, workHandler);
+            } catch (Throwable throwable) {
+                throwable.printStackTrace();
+            }
+        } catch (Throwable throwable){
+            throwable.printStackTrace();
+        }
+    }
+
+    public MeteringRectangle getFocusArea(float cx, float cy, boolean isFocusArea) {
+        if (isFocusArea) {
+            return calcTapAreaForCamera2(cx, cy, previewRect.width() / 5, 1000);
+        } else {
+            return calcTapAreaForCamera2(cx, cy, previewRect.height() / 4, 1000);
+        }
+    }
+
+    private MeteringRectangle calcTapAreaForCamera2(float currentX, float currentY, int areaSize, int weight) {
+        int left = clamp((int) currentX - areaSize / 2,
+                previewRect.left, previewRect.right - areaSize);
+        int top = clamp((int) currentY - areaSize / 2,
+                previewRect.top, previewRect.bottom - areaSize);
+        RectF rectF = new RectF(left, top, left + areaSize, top + areaSize);
+        toFocusRect(coordinateTransformer.toCameraSpace(rectF));
+        return new MeteringRectangle(focusRect, weight);
+    }
+
+    private int clamp(int x, int min, int max) {
+        if (x > max) {
+            return max;
+        }
+        if (x < min) {
+            return min;
+        }
+        return x;
+    }
+
+    private void toFocusRect(RectF rectF) {
+        focusRect.left = Math.round(rectF.left);
+        focusRect.top = Math.round(rectF.top);
+        focusRect.right = Math.round(rectF.right);
+        focusRect.bottom = Math.round(rectF.bottom);
+    }
+
     private boolean checkPermission(){
         return ContextCompat.checkSelfPermission(getContext(), Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
@@ -323,6 +425,10 @@ public class CameraView extends TextureView {
         layoutParams.width = (int) (optimumSize.getHeight() * scale);
         layoutParams.height = (int) (optimumSize.getWidth() * scale);
         setLayoutParams(layoutParams);
+        /*ViewGroup.LayoutParams layoutParams = getLayoutParams();
+        layoutParams.width = optimumSize.getHeight();
+        layoutParams.height = optimumSize.getWidth();
+        setLayoutParams(layoutParams);*/
     }
 
     private class SurfaceTextureListener implements TextureView.SurfaceTextureListener {
@@ -335,8 +441,9 @@ public class CameraView extends TextureView {
                 if(cameraArray.length < 2){
                     return;
                 }
-                cameraId = cameraArray[1];
+                cameraId = cameraArray[0];
                 CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
+                coordinateTransformer = new CoordinateTransformer(characteristics, new RectF(0, 0, width, height));
                 StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
                 if(map != null){
                     choicesSizes = map.getOutputSizes(SurfaceTexture.class);
