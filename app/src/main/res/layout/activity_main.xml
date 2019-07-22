@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.cc.camera.CameraView
+        android:id="@+id/cv"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 成像会自动适应高宽，不会拉伸 -->
+<!--    <com.cc.camera.CameraView
+        android:id="@+id/cv"
+        android:layout_width="500px"
+        android:layout_height="500px" />-->
+
+</LinearLayout>
