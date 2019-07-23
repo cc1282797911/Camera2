@@ -9,7 +9,6 @@ import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
-import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
@@ -38,6 +37,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class CameraView extends TextureView {
+
+    private String tag = getClass().getSimpleName();
 
     private boolean isInitComplete = false;
 
@@ -162,8 +163,25 @@ public class CameraView extends TextureView {
                                         try {
                                             // 自动对焦应
                                             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                                            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON);
                                             CaptureRequest mPreviewRequest = mPreviewRequestBuilder.build();
-                                            cameraCaptureSession.setRepeatingRequest(mPreviewRequest, null, workHandler);
+                                            cameraCaptureSession.setRepeatingRequest(mPreviewRequest, new CameraCaptureSession.CaptureCallback() {
+                                                @Override
+                                                public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
+                                                    super.onCaptureCompleted(session, request, result);
+                                                    Log.v(tag, "onCaptureCompleted");
+                                                }
+                                                @Override
+                                                public void onCaptureFailed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
+                                                    super.onCaptureFailed(session, request, failure);
+                                                    Log.v(tag, "onCaptureFailed");
+                                                }
+                                                @Override
+                                                public void onCaptureStarted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, long timestamp, long frameNumber) {
+                                                    super.onCaptureStarted(session, request, timestamp, frameNumber);
+                                                    Log.v(tag, "onCaptureStarted");
+                                                }
+                                            }, workHandler);
                                         } catch (Throwable throwable) {
                                             throwable.printStackTrace();
                                         }
@@ -287,7 +305,7 @@ public class CameraView extends TextureView {
     public boolean onTouchEvent(MotionEvent event) {
         if(event.getAction() == MotionEvent.ACTION_UP){
             //手动对焦
-            //focus(event.getX(), event.getY());
+            focus(event.getX(), event.getY());
             return true;
         }
         return super.onTouchEvent(event);
@@ -419,6 +437,31 @@ public class CameraView extends TextureView {
         return size;
     }
 
+/*    *//**
+     * 返回支持的最大尺寸，如果无可用尺寸，则会返回viewWidth、viewHeight组成的尺寸（应该不会存在这种情况）
+     * **//*
+    private Size chooseOptimalSize(Size[] choices, int viewWidth, int viewHeight) {
+        Size size = null;
+        if(choices != null){
+            for(Size s : choices){
+                int c = s.getWidth() + s.getHeight();
+                if(size == null){
+                    size = s;
+                }else{
+                    int oldC = size.getWidth() + size.getHeight();
+                    oldC = Math.abs(oldC);
+                    if(c > oldC){
+                        size = s;
+                    }
+                }
+            }
+        }
+        if(size == null){
+            size = new Size(viewWidth, viewHeight);
+        }
+        return size;
+    }*/
+
     /**
      * 成像矩阵转换
      * **/
@@ -431,15 +474,15 @@ public class CameraView extends TextureView {
                 viewHeight / optimumSizeHeight,
                 viewWidth / optimumSizeWidth
         );
+        //scale = 1;
         float finalViewWidth = optimumSizeWidth * scale;
         float finalViewHeight = optimumSizeHeight * scale;
         matrix.setScale(
                 //相同的比例保证图像不会被拉伸
                 scale,
                 scale,
-                //从图像中心缩放
-                optimumSizeWidth / 2f,
-                optimumSizeHeight / 2f
+                optimumSizeWidth / 2,
+                optimumSizeHeight / 2
         );
         textureView.setTransform(matrix);
         //图像默认会拉伸至view的高宽，所以这里要设置view的高宽为转换后的高宽

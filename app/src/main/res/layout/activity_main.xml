@@ -5,10 +5,15 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!--<TextView
+        android:text="6666666666666666666666666666666666666666666666666666666666666666"
+        android:layout_width="1580px"
+        android:layout_height="wrap_content" />-->
+
     <com.cc.camera.CameraView
         android:id="@+id/cv"
-        android:layout_width="500px"
-        android:layout_height="500px" />
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
     <!-- 成像会自动适应高宽，不会拉伸 -->
 <!--    <com.cc.camera.CameraView
