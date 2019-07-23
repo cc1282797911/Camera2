@@ -108,6 +108,27 @@ public class CameraView extends TextureView {
         if(!isInitComplete){
             throw new RuntimeException("...init?");
         }
+        Size[] choicesSizes = null;
+        try {
+            String[] cameraArray = cameraManager.getCameraIdList();
+            if(cameraArray.length < 2){
+                return;
+            }
+            cameraId = cameraArray[1];
+            CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
+            coordinateTransformer = new CoordinateTransformer(characteristics, new RectF(0, 0, getWidth(), getHeight()));
+            StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            if(map != null){
+                choicesSizes = map.getOutputSizes(SurfaceTexture.class);
+            }
+        } catch (Throwable throwable){
+            throwable.printStackTrace();
+        }
+        if(choicesSizes == null){
+            return;
+        }
+        previewSize = chooseOptimalSize(choicesSizes, getWidth(), getHeight());
+        configureTransform(CameraView.this, previewSize, getWidth(), getHeight());
         Runnable runnable = new Runnable() {
             @Override
             public void run() {
@@ -130,10 +151,10 @@ public class CameraView extends TextureView {
                                 surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
                                 mPreviewRequestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                                 mPreviewRequestBuilder.addTarget(surface);
-                                //mPreviewRequestBuilder.addTarget(imageReader.getSurface());
+                                mPreviewRequestBuilder.addTarget(imageReader.getSurface());
                                 List<Surface> surfaceList = new ArrayList<>(2);
                                 surfaceList.add(surface);
-                                //surfaceList.add(imageReader.getSurface());
+                                surfaceList.add(imageReader.getSurface());
                                 camera.createCaptureSession(surfaceList, new CameraCaptureSession.StateCallback() {
                                     @Override
                                     public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
@@ -180,7 +201,9 @@ public class CameraView extends TextureView {
     }
 
     private void initImageReader(){
-        imageReader = ImageReader.newInstance(previewSize.getWidth(), previewSize.getHeight(), ImageFormat.YUV_420_888, 1);
+        int width = previewSize.getHeight();
+        int height = previewSize.getWidth();
+        imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 30);
         imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
             @Override
             public void onImageAvailable(ImageReader reader) {
@@ -401,61 +424,38 @@ public class CameraView extends TextureView {
      * **/
     private void configureTransform(TextureView textureView, Size optimumSize, float viewWidth, float viewHeight) {
         Matrix matrix = new Matrix();
-        float optimumSizeHeight = optimumSize.getWidth();
         float optimumSizeWidth = optimumSize.getHeight();
+        float optimumSizeHeight = optimumSize.getWidth();
         //取高宽缩放比例最大的
         float scale = Math.max(
                 viewHeight / optimumSizeHeight,
                 viewWidth / optimumSizeWidth
         );
+        float finalViewWidth = optimumSizeWidth * scale;
+        float finalViewHeight = optimumSizeHeight * scale;
         matrix.setScale(
                 //相同的比例保证图像不会被拉伸
                 scale,
                 scale,
                 //从图像中心缩放
-                optimumSize.getHeight() / 2f,
-                optimumSize.getWidth() / 2f
+                optimumSizeWidth / 2f,
+                optimumSizeHeight / 2f
         );
         textureView.setTransform(matrix);
         //图像默认会拉伸至view的高宽，所以这里要设置view的高宽为转换后的高宽
         ViewGroup.LayoutParams layoutParams = getLayoutParams();
         if(layoutParams == null){
-            throw new RuntimeException("getLayoutParams() == null, 需要设置一个LayoutParams");
+            throw new RuntimeException("getLayoutParams()不能为null");
         }
-        layoutParams.width = (int) (optimumSize.getHeight() * scale);
-        layoutParams.height = (int) (optimumSize.getWidth() * scale);
+        layoutParams.width = (int) finalViewWidth;
+        layoutParams.height = (int) finalViewHeight;
         setLayoutParams(layoutParams);
-        /*ViewGroup.LayoutParams layoutParams = getLayoutParams();
-        layoutParams.width = optimumSize.getHeight();
-        layoutParams.height = optimumSize.getWidth();
-        setLayoutParams(layoutParams);*/
     }
 
     private class SurfaceTextureListener implements TextureView.SurfaceTextureListener {
 
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-            Size[] choicesSizes = null;
-            try {
-                String[] cameraArray = cameraManager.getCameraIdList();
-                if(cameraArray.length < 2){
-                    return;
-                }
-                cameraId = cameraArray[0];
-                CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraId);
-                coordinateTransformer = new CoordinateTransformer(characteristics, new RectF(0, 0, width, height));
-                StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-                if(map != null){
-                    choicesSizes = map.getOutputSizes(SurfaceTexture.class);
-                }
-            } catch (Throwable throwable){
-                throwable.printStackTrace();
-            }
-            if(choicesSizes == null){
-                return;
-            }
-            previewSize = chooseOptimalSize(choicesSizes, getWidth(), getHeight());
-            configureTransform(CameraView.this, previewSize, getWidth(), getHeight());
             if(!isInitComplete){
                 isInitComplete = true;
                 if(onCameraInitCompleteListener != null){

@@ -42,6 +42,13 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onInitComplete() {
                 cameraView.createCameraPreviewSession();
+                cameraView.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        int w = cameraView.getWidth();
+                        System.currentTimeMillis();
+                    }
+                });
             }
         });
     }
